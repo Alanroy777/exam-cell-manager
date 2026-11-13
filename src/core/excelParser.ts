@@ -1,6 +1,6 @@
 import ExcelJS from 'exceljs';
 import { Programme, Student } from './types';
-import { normalizeBranch, normalizeSemester } from './validator';
+import { normalizeBranch, normalizeSemester, normalizeGroupId } from './validator';
 
 export interface ColumnMapping {
   rollNoCol: number;
@@ -101,13 +101,13 @@ export function inferGroupFromTitle(title: string): DetectedGroupMeta {
   else if (t.includes('EIGHTH') || t.includes('8TH SEM')) semester = 'S8';
 
   let batch: string | undefined = undefined;
-  // Match batch A, B, or C specifically, avoiding room numbers like D 103 or D 205
+  // Match batch A, B, or C specifically, ensuring B.Tech is not mistaken for Batch B
   const explicitBatchMatch =
-    t.match(/\bBATCH\s*([A-C])\b/) ||
-    t.match(/\b([A-C])\s*BATCH\b/) ||
-    t.match(/\bS[1-8]\s*([A-C])(?!\s*\d)/) ||
-    t.match(/(?:LIST|STUDENT|STUDENTS)[_\s\-]+([A-C])\b/) ||
-    t.match(/[_\-\s]([A-C])(?:\.XLSX?|$|[\s_])/i);
+    t.match(/\bBATCH\s*([A-C])\b/i) ||
+    t.match(/\b([A-C])\s*BATCH\b/i) ||
+    t.match(/(?:LIST|STUDENT|STUDENTS)[_\s\-]+([A-B])\b/i) ||
+    t.match(/S[1-8][_\-\s]+([A-B])(?:\.XLSX?|$|\b)/i) ||
+    t.match(/\bS[1-8]\s+(?:CS|CSE|EC|ECE)\s+([A-B])\b/i);
 
   if (explicitBatchMatch) {
     batch = explicitBatchMatch[1].toUpperCase();
@@ -148,16 +148,94 @@ export async function parseStudentsFromExcel(
     };
   }
 
-  // 1. Gather text from multiple sources:
+  // Auto-detect header row first
+  let headerRow = options.headerRowIndex || 0;
+  if (headerRow === 0) {
+    for (let r = 1; r <= Math.min(10, worksheet.rowCount); r++) {
+      const row = worksheet.getRow(r);
+      let hasRoll = false;
+      let hasName = false;
+      row.eachCell((cell) => {
+        const val = String(cell.value || '').toLowerCase().trim();
+        // Match roll / serial number columns while avoiding words like 'enrollment'
+        if (
+          /\broll\s*no\b/i.test(val) ||
+          /\brollno\b/i.test(val) ||
+          /\broll\b/i.test(val) ||
+          /\bsl\.?\s*no\b/i.test(val) ||
+          /\bs\.?\s*no\b/i.test(val) ||
+          val === 'sl' ||
+          val === 'no' ||
+          val === 'sl no' ||
+          val === 'sl. no'
+        ) {
+          hasRoll = true;
+        }
+        // Match student name column while avoiding title banners ('college', 'enrollment', 'institution')
+        if (
+          (/\bname\b/i.test(val) &&
+            !val.includes('college') &&
+            !val.includes('department') &&
+            !val.includes('institution') &&
+            !val.includes('enrollment')) ||
+          /\bstudent\s*name\b/i.test(val) ||
+          /\bcandidate\s*name\b/i.test(val)
+        ) {
+          hasName = true;
+        }
+      });
+      if (hasRoll && hasName) {
+        headerRow = r;
+        // Check if the next row is also a duplicate header row (as in BTECH-S5)
+        if (r < worksheet.rowCount) {
+          const nextRow = worksheet.getRow(r + 1);
+          let nextHasRoll = false;
+          let nextHasName = false;
+          nextRow.eachCell((cell) => {
+            const val = String(cell.value || '').toLowerCase().trim();
+            if (
+              /\broll\s*no\b/i.test(val) ||
+              /\brollno\b/i.test(val) ||
+              /\broll\b/i.test(val) ||
+              /\bsl\.?\s*no\b/i.test(val) ||
+              /\bs\.?\s*no\b/i.test(val) ||
+              val === 'sl' ||
+              val === 'no'
+            ) {
+              nextHasRoll = true;
+            }
+            if (
+              (/\bname\b/i.test(val) &&
+                !val.includes('college') &&
+                !val.includes('department') &&
+                !val.includes('institution') &&
+                !val.includes('enrollment')) ||
+              /\bstudent\s*name\b/i.test(val) ||
+              /\bcandidate\s*name\b/i.test(val)
+            ) {
+              nextHasName = true;
+            }
+          });
+          if (nextHasRoll && nextHasName) {
+            headerRow = r + 1;
+          }
+        }
+        break;
+      }
+    }
+    if (headerRow === 0) headerRow = 2; // Default fallback
+  }
+
+  // 1. Gather text from metadata sources:
   // - options.filename (e.g. "BTECH-S5-A.xlsx")
   // - worksheet.name (e.g. "student_list_a")
-  // - pre-header rows 1 to 10 of worksheet
+  // - pre-header rows only (rows 1 to headerRow - 1)
   const filenameMeta = options.filename ? inferGroupFromTitle(options.filename) : {};
   const sheetMeta = inferGroupFromTitle(worksheet.name);
 
-  // Scan top 10 rows for group metadata
+  // Scan pre-header rows only for group metadata (never scan student rows)
   const topRowsMeta: DetectedGroupMeta = {};
-  for (let r = 1; r <= Math.min(10, worksheet.rowCount); r++) {
+  for (let r = 1; r < headerRow; r++) {
     const row = worksheet.getRow(r);
     const cellTexts: string[] = [];
     row.eachCell((cell) => {
@@ -207,40 +285,6 @@ export async function parseStudentsFromExcel(
     ? (options.defaultBatch ? options.defaultBatch.trim() : undefined)
     : detectedBatch;
 
-  // Auto-detect header row if not specified
-  let headerRow = options.headerRowIndex || 0;
-  if (headerRow === 0) {
-    for (let r = 1; r <= Math.min(10, worksheet.rowCount); r++) {
-      const row = worksheet.getRow(r);
-      let hasRoll = false;
-      let hasName = false;
-      row.eachCell((cell) => {
-        const val = String(cell.value || '').toLowerCase().trim();
-        if (val.includes('roll') || val === 'sl' || val === 'sl no' || val === 'sl.' || val === 'no') hasRoll = true;
-        if (val.includes('name') || val.includes('student')) hasName = true;
-      });
-      if (hasRoll && hasName) {
-        headerRow = r;
-        // Check if the next row is also a duplicate header row (as in BTECH-S5)
-        if (r < worksheet.rowCount) {
-          const nextRow = worksheet.getRow(r + 1);
-          let nextHasRoll = false;
-          let nextHasName = false;
-          nextRow.eachCell((cell) => {
-            const val = String(cell.value || '').toLowerCase().trim();
-            if (val.includes('roll') || val === 'sl' || val === 'sl no' || val === 'sl.' || val === 'no') nextHasRoll = true;
-            if (val.includes('name') || val.includes('student')) nextHasName = true;
-          });
-          if (nextHasRoll && nextHasName) {
-            headerRow = r + 1;
-          }
-        }
-        break;
-      }
-    }
-    if (headerRow === 0) headerRow = 2; // Default fallback
-  }
-
   // Read detected headers
   const hRow = worksheet.getRow(headerRow);
   let rollCol = options.columnMapping?.rollNoCol || 0;
@@ -256,11 +300,32 @@ export async function parseStudentsFromExcel(
     detectedHeaders.push({ colIndex: colNumber, text });
     const lower = text.toLowerCase();
 
-    if (!rollCol && (lower.includes('roll') || lower === 'sl no' || lower === 'sl' || lower === 'sl.' || lower === 'no')) {
+    if (
+      !rollCol &&
+      (/\broll\s*no\b/i.test(lower) ||
+        /\brollno\b/i.test(lower) ||
+        /\broll\b/i.test(lower) ||
+        /\bsl\.?\s*no\b/i.test(lower) ||
+        /\bs\.?\s*no\b/i.test(lower) ||
+        lower === 'sl' ||
+        lower === 'sl no' ||
+        lower === 'sl. no' ||
+        lower === 'sl.no' ||
+        lower === 'no')
+    ) {
       rollCol = colNumber;
-    } else if (!nameCol && (lower.includes('name') || lower.includes('student'))) {
+    } else if (
+      !nameCol &&
+      (/\bname\b/i.test(lower) || lower.includes('student')) &&
+      !lower.includes('college') &&
+      !lower.includes('department') &&
+      !lower.includes('enrollment')
+    ) {
       nameCol = colNumber;
-    } else if (!regNoCol && (lower.includes('reg') || lower.includes('register') || lower.includes('ktuid'))) {
+    } else if (
+      !regNoCol &&
+      (lower.includes('reg') || lower.includes('register') || lower.includes('ktuid') || lower.includes('ktu id'))
+    ) {
       regNoCol = colNumber;
     } else if (!branchCol && lower.includes('branch')) {
       branchCol = colNumber;
@@ -294,11 +359,19 @@ export async function parseStudentsFromExcel(
       nameLower === 'name' ||
       nameLower === 'name of student' ||
       nameLower === 'student name' ||
+      nameLower === 'register number' ||
+      nameLower === 'reg no' ||
+      nameLower === 'sl.no' ||
+      nameLower === 'sl no' ||
       rollLower === 'rollno' ||
       rollLower === 'roll no' ||
       rollLower === 'sl no' ||
       rollLower === 'sl. no' ||
-      rollLower === 'sl'
+      rollLower === 'sl.no' ||
+      rollLower === 'sl' ||
+      rollLower === 'no' ||
+      rollLower.includes('b.tech') ||
+      rollLower.includes('students enrollment')
     ) {
       continue;
     }
@@ -308,8 +381,8 @@ export async function parseStudentsFromExcel(
       continue;
     }
 
-    // Clean roll number (e.g. 1.0 -> 1)
-    const cleanRoll = rollVal.replace(/\.0$/, '');
+    // Clean roll number (e.g. 1.0 -> 1) with sequential fallback if empty
+    const cleanRoll = rollVal.replace(/\.0$/, '').trim() || String(r - headerRow);
 
     const regNoVal = regNoCol ? String(row.getCell(regNoCol).value || '').trim() : undefined;
     const rowBranch = branchCol ? normalizeBranch(String(row.getCell(branchCol).value || branch)) : branch;
@@ -329,7 +402,8 @@ export async function parseStudentsFromExcel(
       }
     }
 
-    const groupId = `${rowSem} ${rowBranch}${rowBatch ? ' ' + rowBatch : ''}`;
+    const rawGroupId = `${rowSem} ${rowBranch}${rowBatch ? ' ' + rowBatch : ''}`;
+    const groupId = normalizeGroupId(rawGroupId);
 
     if (seenRolls.has(`${groupId}_${cleanRoll}`)) {
       warnings.push({ row: r, message: `Row ${r}: Duplicate roll number ${cleanRoll} in group ${groupId}` });

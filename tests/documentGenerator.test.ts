@@ -74,10 +74,17 @@ describe('Document Generation Module', () => {
     expect(docs.seatingSheets[0].html).toContain('D 102');
     expect(docs.seatingSheets[0].html).toContain('S5 EC');
 
+    expect(docs.consolidatedSeatingSheet).toContain('D 102');
+    expect(docs.consolidatedSeatingSheet).toContain('SEATING ARRANGEMENT');
+
     expect(docs.attendanceSheets.length).toBe(1);
     expect(docs.attendanceSheets[0].html).toContain('Attendance Sheet');
     expect(docs.attendanceSheets[0].html).toContain('ADARSH S');
     expect(docs.attendanceSheets[0].html).toContain('ANAKHA SHAJIMON');
+    expect(docs.attendanceSheets[0].html).toContain('S5 EC 01');
+    expect(docs.attendanceSheets[0].html).toContain('Semester : &nbsp; V');
+    expect(docs.attendanceSheets[0].html).toContain('Electronics and Communication Engineering');
+    expect(docs.attendanceSheets[0].html).toContain('attendance-page-box');
 
     expect(docs.dutyListNotice).toContain('INVIGILATION DUTY LIST');
     expect(docs.dutyListNotice).toContain('Rajesh K R');

@@ -15,6 +15,7 @@ export interface GenerateSeatingOptions {
   students: Student[];
   halls: Hall[];
   maxHallCapacity?: number; // Defaults to 40
+  useAllProvidedHalls?: boolean; // When true, includes all provided halls rather than stopping at capacity
 }
 
 /**
@@ -312,40 +313,44 @@ export function createEmptySeats(
 
   let seatNumber = 1;
   let leftAssigned = 0;
-  // Left side seats
-  for (let cIdx = 0; cIdx < colCount; cIdx++) {
-    const col = activeCols[cIdx];
-    const sCount = slotsDistribution[cIdx].length;
-    for (let s = 1; s <= sCount && leftAssigned < leftCount; s++) {
-      const slotIndex = (s - 1) * colCount + cIdx;
-      seats.push({
-        seatNumber: seatNumber++,
-        benchNo: s,
-        column: col,
-        position: 'left',
-        seatType: slotIndex < actualBenches ? 'bench' : 'desk_chair',
-        studentId: null,
-      });
-      leftAssigned++;
+  // Left side seats - ordered row-by-row across columns A, B, C, D (matching official exam sheet)
+  const maxRowsLeft = Math.max(...slotsDistribution.map((d) => d.length));
+  for (let s = 1; s <= maxRowsLeft && leftAssigned < leftCount; s++) {
+    for (let cIdx = 0; cIdx < colCount && leftAssigned < leftCount; cIdx++) {
+      if (s <= slotsDistribution[cIdx].length) {
+        const col = activeCols[cIdx];
+        const slotIndex = (s - 1) * colCount + cIdx;
+        seats.push({
+          seatNumber: seatNumber++,
+          benchNo: s,
+          column: col,
+          position: 'left',
+          seatType: slotIndex < actualBenches ? 'bench' : 'desk_chair',
+          studentId: null,
+        });
+        leftAssigned++;
+      }
     }
   }
 
   let rightAssigned = 0;
-  // Right side seats
-  for (let cIdx = 0; cIdx < colCount; cIdx++) {
-    const col = activeCols[cIdx];
-    const sCount = slotsDistribution[cIdx].length;
-    for (let s = 1; s <= sCount && rightAssigned < rightCount; s++) {
-      const slotIndex = (s - 1) * colCount + cIdx;
-      seats.push({
-        seatNumber: seatNumber++,
-        benchNo: s,
-        column: col,
-        position: 'right',
-        seatType: slotIndex < actualBenches ? 'bench' : 'desk_chair',
-        studentId: null,
-      });
-      rightAssigned++;
+  // Right side seats - ordered row-by-row across columns A, B, C, D
+  const maxRowsRight = Math.max(...slotsDistribution.map((d) => d.length));
+  for (let s = 1; s <= maxRowsRight && rightAssigned < rightCount; s++) {
+    for (let cIdx = 0; cIdx < colCount && rightAssigned < rightCount; cIdx++) {
+      if (s <= slotsDistribution[cIdx].length) {
+        const col = activeCols[cIdx];
+        const slotIndex = (s - 1) * colCount + cIdx;
+        seats.push({
+          seatNumber: seatNumber++,
+          benchNo: s,
+          column: col,
+          position: 'right',
+          seatType: slotIndex < actualBenches ? 'bench' : 'desk_chair',
+          studentId: null,
+        });
+        rightAssigned++;
+      }
     }
   }
 
@@ -398,7 +403,7 @@ interface ConflictClique {
  * Pure TypeScript, zero UI dependencies.
  */
 export function generateSeatingPlan(options: GenerateSeatingOptions): SeatingResult {
-  const { students: rawStudents, halls: allHalls, maxHallCapacity = 40 } = options;
+  const { students: rawStudents, halls: allHalls, maxHallCapacity = 40, useAllProvidedHalls = false } = options;
 
   // Filter only active students
   const activeStudents = rawStudents.filter((s) => s.status === 'active');
@@ -461,24 +466,32 @@ export function generateSeatingPlan(options: GenerateSeatingOptions): SeatingRes
   }
 
   const totalStudents = activeStudents.length;
+  const maxCliqueSize = Math.max(0, ...Array.from(cliqueMap.values()).map((c) => c.totalCount));
 
-  // Select halls based on actual individual capacities until combined capacity >= totalStudents
+  // Select halls based on actual individual capacities AND single-clique non-adjacent constraints
   const selectedHalls: Hall[] = [];
   let accumulatedCap = 0;
+  let accumulatedSingleCap = 0;
   for (const hall of availableHalls) {
     selectedHalls.push(hall);
-    accumulatedCap += Math.min(hall.capacity, maxHallCapacity);
-    if (accumulatedCap >= totalStudents) break;
+    const hallCap = Math.min(hall.capacity, maxHallCapacity);
+    const singleCap = Math.floor(hallCap / 2);
+    accumulatedCap += hallCap;
+    accumulatedSingleCap += singleCap;
+    if (!useAllProvidedHalls && accumulatedCap >= totalStudents && accumulatedSingleCap >= maxCliqueSize) break;
   }
 
-  if (accumulatedCap < totalStudents) {
+  if (accumulatedCap < totalStudents || (!useAllProvidedHalls && accumulatedSingleCap < maxCliqueSize)) {
+    const isSingleCliqueDeficit = accumulatedCap >= totalStudents && accumulatedSingleCap < maxCliqueSize;
     const violations: RuleViolation[] = [
       {
         code: 'MAX_CAPACITY',
         severity: 'error',
         hallId: '',
         hallName: 'All Halls',
-        message: `Insufficient hall capacity available. Total ${totalStudents} active students need seating, but combined capacity of all ${availableHalls.length} available halls is only ${accumulatedCap}.`,
+        message: isSingleCliqueDeficit
+          ? `Insufficient halls for KTU non-adjacent seating. The largest group has ${maxCliqueSize} students, requiring at least ${Math.ceil(maxCliqueSize / 20)} halls (maximum 20 students of the same class per hall).`
+          : `Insufficient hall capacity available. Total ${totalStudents} active students need seating, but combined capacity of all ${availableHalls.length} available halls is only ${accumulatedCap}.`,
       },
     ];
     return {
@@ -602,6 +615,16 @@ export function generateSeatingPlan(options: GenerateSeatingOptions): SeatingRes
   const unassigned = activeStudents.filter(
     (s) => !hallPlans.some((p) => p.seats.some((st) => st.studentId === s.id))
   );
+
+  if (unassigned.length > 0) {
+    violations.push({
+      code: 'MAX_CAPACITY',
+      severity: 'error',
+      hallId: '',
+      hallName: 'Selected Halls',
+      message: `${unassigned.length} students could not be seated. Under KTU rules, students of the same class cannot sit adjacent to each other on a bench (maximum 20 per 40-seat hall). Please select at least ${Math.ceil(maxCliqueSize / 20)} halls to accommodate all students.`,
+    });
+  }
 
   return {
     hallPlans,

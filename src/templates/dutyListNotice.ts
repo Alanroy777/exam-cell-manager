@@ -29,9 +29,16 @@ export function generateDutyListNoticeHtml(props: DutyListNoticeProps): string {
   // Build a lookup set: `${staffId}_${date}`
   const dutySet = new Set(assignments.map((a) => `${a.staffId}_${a.date}`));
 
-  // Header date columns
+  // Header date columns (vertical text matching reference/Duty List.jpg)
+  const dateColWidth = Math.floor(48 / Math.max(1, dates.length));
   const dateHeadersHtml = dates
-    .map((d) => `<th style="width: ${Math.floor(45 / dates.length)}%;">${d}</th>`)
+    .map(
+      (d) => `
+      <th class="vertical-date-th" style="width: ${dateColWidth}%; border: 1px solid #000;">
+        <div class="vertical-date-text">${d}</div>
+      </th>
+    `
+    )
     .join('');
 
   // Table rows for all staff
@@ -40,16 +47,22 @@ export function generateDutyListNoticeHtml(props: DutyListNoticeProps): string {
       const dateCells = dates
         .map((d) => {
           const hasDuty = dutySet.has(`${st.id}_${d}`);
-          return `<td class="center" style="font-weight: 800; font-size: 11pt;">${hasDuty ? 'X' : ''}</td>`;
+          return `<td class="center" style="font-weight: 800; font-size: 11pt; border: 1px solid #000; text-align: center;">${
+            hasDuty ? 'X' : ''
+          }</td>`;
         })
         .join('');
 
       return `
-        <tr>
-          <td class="center numeric" style="width: 6%; font-weight: 600;">${idx + 1}</td>
-          <td style="width: 25%; font-weight: 600;">${st.name}</td>
+        <tr style="height: 24px;">
+          <td class="center numeric" style="width: 5%; font-weight: 600; text-align: center; border: 1px solid #000;">${
+            idx + 1
+          }</td>
+          <td style="width: 30%; font-weight: 600; padding-left: 8px; border: 1px solid #000;">${
+            st.name
+          }</td>
           ${dateCells}
-          <td style="width: 15%;"></td>
+          <td style="width: 17%; border: 1px solid #000;"></td>
         </tr>
       `;
     })
@@ -61,23 +74,39 @@ export function generateDutyListNoticeHtml(props: DutyListNoticeProps): string {
       <head>
         <meta charset="utf-8" />
         <title>Invigilation Duty List</title>
-        <style>${PRINT_STYLES}</style>
+        <style>
+          ${PRINT_STYLES}
+          table.duty-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 8px;
+            font-size: 9.5pt;
+          }
+          table.duty-table th, table.duty-table td {
+            border: 1px solid #000000;
+          }
+          table.duty-table th {
+            background-color: #ffffff !important;
+            font-weight: 700;
+            text-align: center;
+          }
+        </style>
       </head>
       <body>
         <div class="page">
-          <div class="header">
-            <h1>${collegeName}</h1>
-            <h2>${examTitle}</h2>
-            <h3>INVIGILATION DUTY LIST (${dateRangeText})</h3>
+          <div style="text-align: center; margin-bottom: 8px;">
+            <h1 style="font-size: 14pt; font-weight: 800; margin: 0 0 2px 0;">${collegeName}</h1>
+            <h2 style="font-size: 10.5pt; font-weight: 700; margin: 0 0 3px 0;">${examTitle}</h2>
+            <h3 style="font-size: 11pt; font-weight: 800; margin: 4px 0 2px 0;">INVIGILATION DUTY LIST (${dateRangeText})</h3>
           </div>
 
-          <table class="doc-table">
+          <table class="duty-table">
             <thead>
               <tr>
-                <th style="width: 6%;">Sl No</th>
-                <th style="width: 25%;">Name</th>
+                <th style="width: 5%;">Sl<br />No</th>
+                <th style="width: 30%;">Name</th>
                 ${dateHeadersHtml}
-                <th style="width: 15%;">Signature</th>
+                <th style="width: 17%;">Signature</th>
               </tr>
             </thead>
             <tbody>
@@ -85,24 +114,24 @@ export function generateDutyListNoticeHtml(props: DutyListNoticeProps): string {
             </tbody>
           </table>
 
-          <div style="margin-top: 15px; font-weight: 600; font-size: 10pt;">
-            <div>Date : ${noticeDate}</div>
-            <div style="margin-top: 5px;">Time : ${timeRangeText}</div>
+          <div style="margin-top: 15px; display: flex; justify-content: space-between; font-weight: 700; font-size: 10pt;">
+            <div>
+              <div>Date : &nbsp; ${noticeDate}</div>
+              <div style="margin-top: 4px;">Time : &nbsp; ${timeRangeText}</div>
+            </div>
+            <div style="text-align: right; width: 180px; padding-right: 15px;">
+              ${signatoryText}
+            </div>
           </div>
 
           <div class="notes-block">
             <p><strong>Note:</strong> The duty assigned staff members are directed to report at the Exam Cell at least 15 minutes prior to the commencement of exams.</p>
             <p>Duty adjustments should be done by invigilators themselves and inform exam cell.</p>
           </div>
-
-          <div class="signatory-block" style="justify-content: flex-end; margin-top: 30px;">
-            <div class="signatory-col">
-              <div class="signatory-line">${signatoryText}</div>
-            </div>
-          </div>
         </div>
       </body>
     </html>
   `;
 }
+
 

@@ -35,6 +35,66 @@ export function normalizeSemester(sem: string): string {
 }
 
 /**
+ * Normalizes group IDs to institutional standard format
+ * e.g. "S3 BCA" -> "BCA S3", "BCA S3" -> "BCA S3"
+ *      "S1 MCA" -> "MCA S1", "MCA S1" -> "MCA S1"
+ *      "S3 CSE A", "S3 A" -> "S3 CS A"
+ *      "S5 CSE B", "S5 B" -> "S5 CS B"
+ *      "S7", "S7 CSE" -> "S7 CS"
+ *      "S5 ECE" -> "S5 EC"
+ */
+export function normalizeGroupId(groupId: string): string {
+  if (!groupId) return '';
+  const trimmed = groupId.trim();
+
+  // Diploma: e.g. "Diploma S1", "S1 Diploma", "DIP S3", "S3 DIP"
+  const dipMatch = trimmed.match(/\b(?:S([1-6])[\s_-]*(?:DIPLOMA|DIP)|(?:DIPLOMA|DIP)[\s_-]*S([1-6]))\b/i);
+  if (dipMatch) {
+    const sem = dipMatch[1] || dipMatch[2];
+    return `Diploma S${sem}`;
+  }
+
+  // BCA: e.g. "S3 BCA", "BCA S3", "BCA-S3" -> "BCA S3"
+  const bcaMatch = trimmed.match(/\b(?:S([1-6])[\s_-]*BCA|BCA[\s_-]*S([1-6]))\b/i);
+  if (bcaMatch) {
+    const sem = bcaMatch[1] || bcaMatch[2];
+    return `BCA S${sem}`;
+  }
+
+  // MCA: e.g. "S1 MCA", "MCA S1", "S3 MCA", "MCA S3" -> "MCA S1" / "MCA S3"
+  const mcaMatch = trimmed.match(/\b(?:S([1-4])[\s_-]*MCA|MCA[\s_-]*S([1-4]))\b/i);
+  if (mcaMatch) {
+    const sem = mcaMatch[1] || mcaMatch[2];
+    return `MCA S${sem}`;
+  }
+
+  // B.Tech S7: e.g. "S7", "S7 CS", "S7 CSE", "B.Tech S7", "BTECH S7", "S7-CS" -> "S7 CS"
+  if (/^S7[\s_-]*(?:CS|CSE)?$/i.test(trimmed) || /^(?:B\.?TECH[\s_-]*)?S7[\s_-]*(?:CSE?)?$/i.test(trimmed)) {
+    return 'S7 CS';
+  }
+
+  // B.Tech CS with batches: e.g. "S3 CS A", "S3 CSE A", "S3 A", "S5 CS B", "S5 B", "S3-CS-A" -> "S3 CS A" / "S5 CS B"
+  const csBatchMatch = trimmed.match(/^S([1-8])[\s_-]*(?:CS|CSE)?[\s_-]*([A-C])$/i);
+  if (csBatchMatch) {
+    return `S${csBatchMatch[1]} CS ${csBatchMatch[2].toUpperCase()}`;
+  }
+
+  // B.Tech EC: e.g. "S5 EC", "S5 ECE", "S3 EC", "S3 ECE", "S5EC" -> "S5 EC" / "S3 EC"
+  const ecMatch = trimmed.match(/^S([1-8])[\s_-]*(?:EC|ECE)$/i);
+  if (ecMatch) {
+    return `S${ecMatch[1]} EC`;
+  }
+
+  // B.Tech general: e.g. "S3 CS", "S5 CS", "S3CS"
+  const csGeneralMatch = trimmed.match(/^S([1-8])[\s_-]*(?:CS|CSE)$/i);
+  if (csGeneralMatch) {
+    return `S${csGeneralMatch[1]} CS`;
+  }
+
+  return trimmed.replace(/\s+/g, ' ');
+}
+
+/**
  * Check if two students are in conflict sitting adjacent on the same bench.
  * Rule: Same branch AND same semester must NEVER sit together, regardless of batch.
  */

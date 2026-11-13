@@ -1,16 +1,17 @@
 /**
- * Shared Print CSS for official institutional documents
- * College of Engineering Poonjar
+ * Official Institutional Document Styles
+ * College of Engineering Poonjar (CEP)
+ * Matching exact college reference documents
  */
 
 export const PRINT_STYLES = `
   @page {
     size: A4 portrait;
-    margin: 12mm 15mm;
+    margin: 10mm 12mm;
   }
   @page landscape {
     size: A4 landscape;
-    margin: 10mm 12mm;
+    margin: 8mm 10mm;
   }
 
   * {
@@ -20,7 +21,7 @@ export const PRINT_STYLES = `
   }
 
   body {
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-family: "Times New Roman", Times, Georgia, serif;
     color: #000000;
     background: #ffffff;
     margin: 0;
@@ -33,66 +34,61 @@ export const PRINT_STYLES = `
     width: 100%;
     page-break-after: always;
     position: relative;
-    padding-bottom: 20px;
+    padding: 0;
+    margin: 0;
   }
   .page:last-child {
     page-break-after: avoid;
   }
 
+  /* Attendance Sheet Outer Box Border */
+  .attendance-box {
+    border: 2px solid #000000;
+    padding: 22px 26px;
+    min-height: 980px;
+  }
+
   .header {
     text-align: center;
-    margin-bottom: 12px;
+    margin-bottom: 10px;
   }
   .header h1 {
-    font-size: 15pt;
+    font-size: 14pt;
     font-weight: 800;
-    letter-spacing: 0.5px;
-    margin: 0 0 3px 0;
+    letter-spacing: 0.3px;
+    margin: 0 0 2px 0;
     text-transform: uppercase;
   }
   .header h2 {
-    font-size: 11pt;
+    font-size: 10.5pt;
     font-weight: 700;
-    margin: 0 0 4px 0;
+    margin: 0 0 3px 0;
     text-transform: uppercase;
   }
   .header h3 {
-    font-size: 12pt;
-    font-weight: 700;
-    margin: 5px 0 3px 0;
-    text-decoration: underline;
+    font-size: 11.5pt;
+    font-weight: 800;
+    margin: 4px 0 2px 0;
     text-transform: uppercase;
-  }
-  .header .meta-row {
-    display: flex;
-    justify-content: space-between;
-    font-size: 10.5pt;
-    font-weight: 600;
-    margin-top: 10px;
-    margin-bottom: 8px;
-    border-bottom: 1px dashed #000;
-    padding-bottom: 4px;
   }
 
   table.doc-table {
     width: 100%;
     border-collapse: collapse;
-    margin-top: 8px;
-    margin-bottom: 15px;
-    font-size: 10pt;
+    margin-top: 6px;
+    margin-bottom: 10px;
+    font-size: 10.5pt;
   }
   table.doc-table th, table.doc-table td {
-    border: 1px solid #000000;
-    padding: 5px 8px;
-    text-align: left;
+    border: 1.5px solid #000000;
+    padding: 5px 6px;
     vertical-align: middle;
   }
   table.doc-table th {
-    background-color: #f2f2f2 !important;
+    background-color: #ffffff !important;
     font-weight: 700;
     text-align: center;
-    text-transform: uppercase;
-    font-size: 9.5pt;
+    font-size: 10pt;
   }
   table.doc-table td.center {
     text-align: center;
@@ -101,58 +97,48 @@ export const PRINT_STYLES = `
     font-variant-numeric: tabular-nums;
   }
 
-  .signatory-block {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-end;
-    margin-top: 40px;
-    padding-top: 10px;
-    page-break-inside: avoid;
-  }
-  .signatory-col {
+  /* Vertical date column header for Duty List (matching photo) */
+  .vertical-date-th {
+    height: 85px;
+    vertical-align: bottom !important;
+    padding: 4px 2px !important;
     text-align: center;
-    width: 220px;
+    border: 1.5px solid #000000 !important;
   }
-  .signatory-line {
-    margin-top: 45px;
-    border-top: 1px solid #000;
-    padding-top: 4px;
+  .vertical-date-text {
+    writing-mode: vertical-rl;
+    transform: rotate(180deg);
+    white-space: nowrap;
+    font-size: 9pt;
     font-weight: 700;
-    font-size: 10pt;
+    margin: 0 auto;
+    display: inline-block;
   }
 
-  .notes-block {
-    margin-top: 15px;
-    font-size: 9.5pt;
-    border-top: 1px dotted #666;
-    padding-top: 8px;
-    page-break-inside: avoid;
-  }
-  .notes-block p {
-    margin: 3px 0;
-  }
-
-  /* Seating Grid Specifics */
-  .seating-matrix {
+  /* Seating Grid Specifics (Portrait Format: 2 Halls per Page) */
+  table.seating-table {
     width: 100%;
     border-collapse: collapse;
-    margin-top: 10px;
+    margin-top: 4px;
+    margin-bottom: 8px;
     font-size: 9.5pt;
   }
-  .seating-matrix th, .seating-matrix td {
-    border: 1px solid #000;
-    padding: 6px 4px;
+  table.seating-table th, table.seating-table td {
+    border: 1.5px solid #000000;
+    padding: 4px 3px;
     text-align: center;
+    font-weight: 700;
   }
-  .seating-matrix th {
-    background-color: #f2f2f2 !important;
-    font-weight: bold;
+  table.seating-table th {
+    background-color: #ffffff !important;
+    font-weight: 700;
   }
   .seat-cell {
-    font-weight: 600;
-    font-variant-numeric: tabular-nums;
+    font-weight: 700;
     font-size: 9.5pt;
-    min-height: 22px;
+    white-space: nowrap;
   }
 `;
+
+
 

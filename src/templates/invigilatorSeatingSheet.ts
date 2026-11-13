@@ -1,5 +1,6 @@
 import { PRINT_STYLES } from './styles';
-import { HallSeatingPlan } from '../core/types';
+import { HallSeatingPlan, Student } from '../core/types';
+import { toNoticeCourseName } from './hallAllocationNotice';
 
 export interface InvigilatorSeatingSheetProps {
   collegeName?: string;
@@ -7,95 +8,126 @@ export interface InvigilatorSeatingSheetProps {
   date: string;
   timeRange: string;
   hallPlan: HallSeatingPlan;
+  secondHallPlan?: HallSeatingPlan; // For 2 halls per page matching reference photo
 }
 
-export function generateInvigilatorSeatingSheetHtml(props: InvigilatorSeatingSheetProps): string {
-  const {
-    collegeName = 'COLLEGE OF ENGINEERING, POONJAR',
-    examTitle,
-    date,
-    timeRange,
-    hallPlan,
-  } = props;
+export function toShortCourseName(groupId: string): string {
+  return toNoticeCourseName(groupId);
+}
 
-  // Build matrix for Left seats (Table 1) and Right seats (Table 2)
-  // Dynamic column detection: A, B for 2-column halls; A, B, C, D for 4-column halls
+function formatSeatCell(student?: Student): string {
+  if (!student) return '';
+  const shortCourse = toShortCourseName(student.groupId);
+  const rollNum = student.rollNo.replace(/\D/g, '');
+  const roll = rollNum ? parseInt(rollNum, 10).toString() : student.rollNo;
+  return `${shortCourse} ${roll}`.trim();
+}
+
+function renderHallSection(
+  hallPlan: HallSeatingPlan,
+  collegeName: string,
+  examTitle: string,
+  date: string,
+  timeRange: string
+): string {
   const presentCols = (['A', 'B', 'C', 'D'] as const).filter((c) =>
     hallPlan.seats.some((s) => s.column === c)
   );
   const cols = presentCols.length > 0 ? presentCols : (['A', 'B', 'C', 'D'] as const);
-  const colWidth = Math.floor(88 / cols.length);
+  const colWidth = (86 / cols.length).toFixed(1);
 
   const maxBenchNo = Math.max(5, ...hallPlan.seats.map((s) => s.benchNo || 0));
   const rowNumbers = Array.from({ length: maxBenchNo }, (_, i) => i + 1);
 
   const hasMiddle = hallPlan.seats.some((s) => s.position === 'middle');
 
-  function renderMatrix(side: 'left' | 'middle' | 'right', title: string) {
-    const rowsHtml = rowNumbers
+  function renderRows(side: 'left' | 'middle' | 'right') {
+    return rowNumbers
       .map((benchNo) => {
         const colCells = cols.map((col) => {
           const seat = hallPlan.seats.find(
             (s) => s.position === side && s.column === col && s.benchNo === benchNo
           );
-          if (seat) {
-            if (seat.student) {
-              const grp = seat.student.groupId;
-              const roll = seat.student.rollNo;
-              const isWritingPad = seat.seatType === 'writing_pad';
-              return `
-                <td class="seat-cell">
-                  <strong>${grp}</strong><br />${roll}
-                  ${isWritingPad ? '<div style="font-size: 7.5pt; color: #555; font-weight: normal; margin-top: 1px;">[Textpad Chair]</div>' : ''}
-                </td>
-              `;
-            }
-            const isWritingPad = seat.seatType === 'writing_pad';
-            return `<td class="seat-cell" style="color: #999;">${isWritingPad ? '- [Textpad]' : '-'}</td>`;
-          }
-
-          // Check if the other stream has a single textpad chair at this row and column
-          const otherSeat = hallPlan.seats.find(
-            (s) => s.column === col && s.benchNo === benchNo
-          );
-          if (otherSeat && otherSeat.seatType === 'writing_pad') {
-            const otherSideLabel = otherSeat.position === 'left' ? 'Left' : otherSeat.position === 'middle' ? 'Middle' : 'Right';
-            return `<td class="seat-cell" style="color: #888; font-size: 7.5pt; background: #fafafa; font-style: italic;">(Textpad on ${otherSideLabel})</td>`;
-          }
-
-          return `<td class="seat-cell" style="color: #bbb;">-</td>`;
+          const cellVal = seat && seat.student ? formatSeatCell(seat.student) : '';
+          return `<td class="seat-cell" style="border: 1.5px solid #000; text-align: center; font-weight: 700; font-size: 10pt; height: 21px;">${cellVal}</td>`;
         });
 
         return `
-          <tr>
-            <td class="center" style="font-weight: 700; width: 12%;">${benchNo}</td>
+          <tr style="height: 22px;">
+            <td style="width: 14%; font-weight: 800; text-align: center; border: 1.5px solid #000; font-size: 10pt;">${benchNo}</td>
             ${colCells.join('')}
           </tr>
         `;
       })
       .join('');
-
-    const headersHtml = cols
-      .map((col) => `<th style="width: ${colWidth}%;">${col}</th>`)
-      .join('');
-
-    return `
-      <div style="margin-top: 15px;">
-        <div style="font-weight: 700; font-size: 10pt; margin-bottom: 4px; text-transform: uppercase;">${title}</div>
-        <table class="seating-matrix">
-          <thead>
-            <tr>
-              <th style="width: 12%;">Seat No.</th>
-              ${headersHtml}
-            </tr>
-          </thead>
-          <tbody>
-            ${rowsHtml}
-          </tbody>
-        </table>
-      </div>
-    `;
   }
+
+  const theadHtml = `
+    <thead>
+      <tr style="height: 22px;">
+        <th style="width: 14%; border: 1.5px solid #000; background: #fff !important; font-size: 9.5pt; font-weight: 800;">Seat No.</th>
+        ${cols.map((col) => `<th style="width: ${colWidth}%; border: 1.5px solid #000; background: #fff !important; font-size: 9.5pt; font-weight: 800;">${col}</th>`).join('')}
+      </tr>
+    </thead>
+  `;
+
+  return `
+    <div class="hall-section" style="margin-bottom: 22px; page-break-inside: avoid;">
+      <div style="text-align: center; margin-bottom: 5px;">
+        <div style="font-size: 12pt; font-weight: 800; letter-spacing: 0.3px;">${collegeName}</div>
+        <div style="font-size: 9.5pt; font-weight: 700; margin-top: 1px;">${examTitle}</div>
+        <div style="font-size: 10.5pt; font-weight: 800; margin-top: 2px; letter-spacing: 0.5px;">SEATING ARRANGEMENT</div>
+        <div style="display: flex; justify-content: space-between; font-size: 9.5pt; font-weight: 800; margin-top: 3px; padding: 0 4px;">
+          <div>HALL NO. : &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ${hallPlan.hallName}</div>
+        </div>
+        <div style="display: flex; justify-content: space-between; font-size: 9pt; font-weight: 700; margin-top: 2px; padding: 0 4px;">
+          <div>DATE : &nbsp; ${date}</div>
+          <div>TIME : &nbsp; ${timeRange}</div>
+        </div>
+      </div>
+
+      <!-- Table 1 (Stream 1) -->
+      <table class="seating-table" style="width: 100%; border-collapse: collapse; margin-top: 4px;">
+        ${theadHtml}
+        <tbody>
+          ${renderRows('left')}
+        </tbody>
+      </table>
+
+      ${
+        hasMiddle
+          ? `
+      <!-- Table Middle -->
+      <table class="seating-table" style="width: 100%; border-collapse: collapse; margin-top: 6px;">
+        ${theadHtml}
+        <tbody>
+          ${renderRows('middle')}
+        </tbody>
+      </table>
+      `
+          : ''
+      }
+
+      <!-- Table 2 (Stream 2) -->
+      <table class="seating-table" style="width: 100%; border-collapse: collapse; margin-top: 6px;">
+        ${theadHtml}
+        <tbody>
+          ${renderRows('right')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+export function generateInvigilatorSeatingSheetHtml(props: InvigilatorSeatingSheetProps): string {
+  const {
+    collegeName = 'COLLEGE OF ENGINEERING POONJAR',
+    examTitle,
+    date,
+    timeRange,
+    hallPlan,
+    secondHallPlan,
+  } = props;
 
   return `
     <!DOCTYPE html>
@@ -103,38 +135,71 @@ export function generateInvigilatorSeatingSheetHtml(props: InvigilatorSeatingShe
       <head>
         <meta charset="utf-8" />
         <title>Seating Arrangement - ${hallPlan.hallName}</title>
-        <style>${PRINT_STYLES}</style>
+        <style>
+          ${PRINT_STYLES}
+        </style>
       </head>
       <body>
-        <div class="page">
-          <div class="header">
-            <h1>${collegeName}</h1>
-            <h2>${examTitle}</h2>
-            <h3>SEATING ARRANGEMENT</h3>
-            <div style="font-size: 13pt; font-weight: 800; margin-top: 8px;">HALL NO. : &nbsp; ${hallPlan.hallName}</div>
-            <div class="meta-row">
-              <div>DATE : ${date}</div>
-              <div>TIME : ${timeRange}</div>
-            </div>
-          </div>
-
-          ${renderMatrix('left', 'Table 1 (Bench Left Side)')}
-          ${hasMiddle ? renderMatrix('middle', 'Table 2 (Bench Middle)') : ''}
-          ${renderMatrix('right', hasMiddle ? 'Table 3 (Bench Right Side)' : 'Table 2 (Bench Right Side)')}
-
-          <div style="margin-top: 40px; display: flex; justify-content: space-between;">
-            <div>
-              <strong>Total Students in Hall:</strong> ${hallPlan.totalStudents}
-            </div>
-            <div style="text-align: right; width: 300px;">
-              <div style="margin-top: 35px; border-top: 1px solid #000; padding-top: 5px; font-weight: 700;">
-                Name and Signature of Invigilator
-              </div>
-            </div>
-          </div>
+        <div class="page" style="padding: 6px 10px;">
+          ${renderHallSection(hallPlan, collegeName, examTitle, date, timeRange)}
+          ${
+            secondHallPlan
+              ? renderHallSection(secondHallPlan, collegeName, examTitle, date, timeRange)
+              : ''
+          }
         </div>
       </body>
     </html>
   `;
 }
 
+/**
+ * Generates consolidated A4 Portrait document containing all halls paired 2-per-page
+ * exactly matching the physical printed sheets at College of Engineering Poonjar.
+ */
+export function generateConsolidatedSeatingArrangementHtml(params: {
+  collegeName?: string;
+  examTitle: string;
+  date: string;
+  timeRange: string;
+  hallPlans: HallSeatingPlan[];
+}): string {
+  const {
+    collegeName = 'COLLEGE OF ENGINEERING POONJAR',
+    examTitle,
+    date,
+    timeRange,
+    hallPlans,
+  } = params;
+
+  const activePlans = hallPlans.filter((p) => p.totalStudents > 0);
+  const pagesHtml: string[] = [];
+
+  for (let i = 0; i < activePlans.length; i += 2) {
+    const hall1 = activePlans[i];
+    const hall2 = activePlans[i + 1];
+
+    pagesHtml.push(`
+      <div class="page" style="padding: 6px 10px; page-break-after: ${i + 2 < activePlans.length ? 'always' : 'avoid'};">
+        ${renderHallSection(hall1, collegeName, examTitle, date, timeRange)}
+        ${hall2 ? renderHallSection(hall2, collegeName, examTitle, date, timeRange) : ''}
+      </div>
+    `);
+  }
+
+  return `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="utf-8" />
+        <title>Seating Arrangement - Consolidated (2 Halls / Page)</title>
+        <style>
+          ${PRINT_STYLES}
+        </style>
+      </head>
+      <body>
+        ${pagesHtml.join('')}
+      </body>
+    </html>
+  `;
+}

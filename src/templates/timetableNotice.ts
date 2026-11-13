@@ -20,24 +20,21 @@ export interface TimetableNoticeProps {
 export function generateTimetableNoticeHtml(props: TimetableNoticeProps): string {
   const {
     collegeName = 'COLLEGE OF ENGINEERING POONJAR',
-    subtitle = 'A Unit of IHRD, Government of Kerala',
-    noticeNo = 'CEP/EXAM/ST-REM/2026-27/01',
     noticeDate,
-    academicYear,
-    seriesType,
-    scheduleItems,
-    submissionDeadline,
-    convenerName = 'Exam Cell Convener',
-    principalName = 'Principal / HOD',
+    academicYear = '2026-27',
+    seriesType = 'Second Series',
+    scheduleItems = [],
+    submissionDeadline = '05.10.2026',
+    principalName = 'PRINCIPAL',
   } = props;
 
   const scheduleRows = scheduleItems
     .map(
       (item) => `
       <tr>
-        <td style="font-weight: 600;">${item.programmeDept}</td>
-        <td class="center numeric">${item.firstSeriesDeadline}</td>
-        <td class="center numeric">${item.secondSeriesDeadline}</td>
+        <td style="font-weight: 700; border: 1px solid #000; padding: 6px 10px;">${item.programmeDept}</td>
+        <td class="center numeric" style="border: 1px solid #000; text-align: center; padding: 6px 10px;">${item.firstSeriesDeadline}</td>
+        <td class="center numeric" style="border: 1px solid #000; text-align: center; padding: 6px 10px;">${item.secondSeriesDeadline}</td>
       </tr>
     `
     )
@@ -48,60 +45,83 @@ export function generateTimetableNoticeHtml(props: TimetableNoticeProps): string
     <html>
       <head>
         <meta charset="utf-8" />
-        <title>Timetable and Question Paper Submission Circular</title>
-        <style>${PRINT_STYLES}</style>
+        <title>Examination Notice & Question Paper Submission Circular</title>
+        <style>
+          ${PRINT_STYLES}
+        </style>
       </head>
       <body>
         <div class="page">
-          <div class="header">
-            <h1>${collegeName}</h1>
-            <h2 style="font-weight: 600; font-size: 10pt; text-transform: none;">${subtitle}</h2>
-            <h3>EXAMINATION CELL - CIRCULAR</h3>
-            <div class="meta-row">
-              <div>Ref No : ${noticeNo}</div>
-              <div>Date : ${noticeDate}</div>
+          <div style="display: flex; justify-content: flex-end; font-size: 11pt; font-weight: 700; margin-bottom: 25px;">
+            Dated: ${noticeDate}
+          </div>
+
+          <div style="text-align: center; margin-bottom: 25px;">
+            <h2 style="font-size: 13pt; font-weight: 800; text-decoration: underline; letter-spacing: 1px; margin: 0;">NOTICE</h2>
+            <div style="font-size: 10pt; font-weight: 700; margin-top: 4px; color: #222;">EXAMINATION CELL - CIRCULAR</div>
+          </div>
+
+          <div style="font-size: 11pt; line-height: 1.6; text-align: justify;">
+            <p style="margin-bottom: 16px;">
+              The ${seriesType.toLowerCase()} examination for odd semesters (Academic Year ${academicYear}) will be conducted as per the university and state board schedule.
+            </p>
+
+            <p style="margin-bottom: 16px;">
+              <strong>Time of exam:</strong><br />
+              10:15 am – 12:15 pm (Forenoon) &nbsp;|&nbsp; 01:30 pm – 03:30 pm (Afternoon)
+            </p>
+
+            <p style="margin-bottom: 16px;">
+              The faculty members are directed to upload their Question Paper in PDF format in the prescribed template, on or before <strong>${submissionDeadline}</strong>.
+            </p>
+
+            <p style="margin-bottom: 16px;">
+              The Google form link for uploading the Question Paper will be available in your college e-mail.
+            </p>
+
+            <p style="margin-bottom: 20px;">
+              Class tutors of respective classes are directed to prepare and share the detailed exam timetable in the student class groups. Also, send a copy of the timetable to the internal exam coordinators.
+            </p>
+          </div>
+
+          ${
+            scheduleItems.length > 0
+              ? `
+          <div style="margin-top: 15px; margin-bottom: 10px;">
+            <div style="font-weight: 800; font-size: 10.5pt; margin-bottom: 6px; text-transform: uppercase;">
+              Series Test Schedule Summary (AY ${academicYear}):
+            </div>
+            <table class="doc-table">
+              <thead>
+                <tr>
+                  <th style="width: 44%;">Department / Semester</th>
+                  <th style="width: 28%;">First Series Deadline</th>
+                  <th style="width: 28%;">Second Series Deadline</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${scheduleRows}
+              </tbody>
+            </table>
+          </div>
+          `
+              : ''
+          }
+
+          <div style="margin-top: 50px; display: flex; justify-content: flex-end;">
+            <div style="text-align: center; width: 220px; font-weight: 800; font-size: 11pt;">
+              ${principalName}
             </div>
           </div>
 
-          <div style="margin: 15px 0 10px 0; font-size: 11pt; line-height: 1.5;">
-            <p><strong>Sub:</strong> Conduct of ${seriesType} Examinations (Academic Year ${academicYear}) - Request for Timetable and Question Paper Submission - Reg.</p>
-            <p>Faculty members handling courses for the odd semesters are hereby informed that the ${seriesType} Examinations will be conducted as per the academic calendar schedule specified below:</p>
-          </div>
-
-          <table class="doc-table">
-            <thead>
-              <tr>
-                <th style="width: 40%;">Department / Semester</th>
-                <th style="width: 30%;">First Series Test Deadline</th>
-                <th style="width: 30%;">Second Series Test Deadline</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${scheduleRows}
-            </tbody>
-          </table>
-
-          <div style="margin-top: 15px; font-size: 10pt; line-height: 1.5;">
-            <p><strong>Guidelines for Question Paper Submission:</strong></p>
-            <ol style="margin: 5px 0; padding-left: 20px;">
-              <li>Syllabus Coverage: Two full modules as mandated by the University / State Board curriculum.</li>
-              <li>Question papers must follow the standard KTU format with Course Outcomes (CO) and Bloom's Taxonomy levels marked.</li>
-              <li>A typed copy of the Question Paper along with Scheme of Evaluation must be submitted to the Exam Cell on or before <strong>${submissionDeadline}</strong>.</li>
-              <li>Class tutors are requested to verify student registration lists and notify the Exam Cell of any dropouts or condonation cases.</li>
-            </ol>
-          </div>
-
-          <div class="signatory-block" style="margin-top: 50px;">
-            <div class="signatory-col">
-              <div class="signatory-line">${convenerName}</div>
-            </div>
-            <div class="signatory-col">
-              <div class="signatory-line">${principalName}</div>
-            </div>
+          <div style="margin-top: 40px; font-size: 10pt; font-weight: 600;">
+            <div>Circulate:</div>
+            <div style="margin-top: 4px; font-weight: 500;">Among all faculty members handling odd semester classes</div>
           </div>
         </div>
       </body>
     </html>
   `;
 }
+
 

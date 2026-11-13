@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useAppStore } from '../store';
 import { generateAllSessionDocuments } from '../../core/documentGenerator';
+import { getWorkingDatesInRange } from '../../core/dateUtils';
 import { api } from '../api';
 import {
   Printer,
@@ -12,6 +13,7 @@ import {
   Users,
   CheckCircle2,
   Calendar,
+  Clock,
 } from 'lucide-react';
 
 export const DocumentsView: React.FC = () => {
@@ -20,7 +22,13 @@ export const DocumentsView: React.FC = () => {
     halls,
     staff,
     currentSession,
+    timetable,
     seatingResult,
+    selectedExamDate,
+    selectedExamSlot,
+    slotSeatingResults,
+    setSelectedExamDate,
+    setSelectedExamSlot,
     invigilatorAssignments,
     openPreview,
     settings,
@@ -29,25 +37,50 @@ export const DocumentsView: React.FC = () => {
   const [isExportingAll, setIsExportingAll] = useState(false);
   const [exportMessage, setExportMessage] = useState<string | null>(null);
 
-  const dates = ['09/10/2026', '12/10/2026', '13/10/2026', '14/10/2026', '15/10/2026'];
+  const availableDates = useMemo(() => {
+    const datesFromTimetable = Array.from(new Set(timetable.map((t) => t.date)));
+    if (datesFromTimetable.length > 0) return datesFromTimetable;
+    return getWorkingDatesInRange(currentSession.startDate, currentSession.endDate);
+  }, [timetable, currentSession.startDate, currentSession.endDate]);
 
-  const allDocs = generateAllSessionDocuments({
-    collegeName: settings.collegeName,
-    examTitle: currentSession.name,
-    date: '09/10/2026',
-    timeRange: currentSession.defaultTime,
-    hallPlans: seatingResult?.hallPlans || [],
-    dates,
-    staffList: staff,
-    dutyAssignments: invigilatorAssignments,
-    scheduleItems: [
-      { programmeDept: 'B.Tech — S3 / S5 / S7', firstSeriesDeadline: '19-08-2026 (Wed)', secondSeriesDeadline: '16-10-2026 (Fri)' },
-      { programmeDept: 'BCA — S3', firstSeriesDeadline: '19-08-2026 (Wed)', secondSeriesDeadline: '16-10-2026 (Fri)' },
-      { programmeDept: 'MCA — S3 / S1', firstSeriesDeadline: '19-08-2026 (Wed)', secondSeriesDeadline: '16-10-2026 (Fri)' },
-      { programmeDept: 'Diploma — S1 / S3 / S5', firstSeriesDeadline: '21-08-2026 (Fri)', secondSeriesDeadline: '16-10-2026 (Fri)' },
-    ],
-    submissionDeadline: '05/10/2026',
-  });
+  useEffect(() => {
+    if (availableDates.length > 0 && !availableDates.includes(selectedExamDate)) {
+      setSelectedExamDate(availableDates[0]);
+    }
+  }, [availableDates, selectedExamDate, setSelectedExamDate]);
+
+  const slotKey = `${selectedExamDate}_${selectedExamSlot}`;
+  const activeSeatingResult = slotSeatingResults[slotKey] || seatingResult;
+  const timeRange = selectedExamSlot === 'FN' ? '10.15 AM - 12.15 PM' : '01.30 PM - 03.30 PM';
+
+  const allDocs = useMemo(() => {
+    return generateAllSessionDocuments({
+      collegeName: settings.collegeName,
+      examTitle: currentSession.name,
+      date: selectedExamDate,
+      timeRange,
+      hallPlans: activeSeatingResult?.hallPlans || [],
+      dates: availableDates,
+      staffList: staff,
+      dutyAssignments: invigilatorAssignments,
+      scheduleItems: [
+        { programmeDept: 'B.Tech — S3 / S5 / S7', firstSeriesDeadline: '19-08-2026 (Wed)', secondSeriesDeadline: '16-10-2026 (Fri)' },
+        { programmeDept: 'BCA — S3', firstSeriesDeadline: '19-08-2026 (Wed)', secondSeriesDeadline: '16-10-2026 (Fri)' },
+        { programmeDept: 'MCA — S3 / S1', firstSeriesDeadline: '19-08-2026 (Wed)', secondSeriesDeadline: '16-10-2026 (Fri)' },
+        { programmeDept: 'Diploma — S1 / S3 / S5', firstSeriesDeadline: '21-08-2026 (Fri)', secondSeriesDeadline: '16-10-2026 (Fri)' },
+      ],
+      submissionDeadline: '05/10/2026',
+    });
+  }, [
+    settings.collegeName,
+    currentSession.name,
+    selectedExamDate,
+    timeRange,
+    activeSeatingResult,
+    availableDates,
+    staff,
+    invigilatorAssignments,
+  ]);
 
   const handlePreview = (title: string, html: string) => {
     openPreview(title, html);
@@ -67,17 +100,24 @@ export const DocumentsView: React.FC = () => {
     setExportMessage(null);
 
     const docList: { filename: string; html: string }[] = [];
+    const dateClean = selectedExamDate.replace(/[/\\?%*:|"<>]/g, '_');
 
     // 1. Hall Allocation Notice
     docList.push({
-      filename: `01_Hall_Allocation_Notice_${currentSession.startDate}.pdf`,
+      filename: `01_Hall_Allocation_Notice_${dateClean}_${selectedExamSlot}.pdf`,
       html: allDocs.hallAllocationNotice,
     });
 
-    // 2. Invigilator Seating Sheets
+    // 2. Consolidated Seating Arrangement (2 Halls / A4 Portrait Page - Official Format)
+    docList.push({
+      filename: `02_Seating_Arrangement_Consolidated_${dateClean}_${selectedExamSlot}.pdf`,
+      html: allDocs.consolidatedSeatingSheet,
+    });
+
+    // Individual Seating Sheets
     allDocs.seatingSheets.forEach((s) => {
       docList.push({
-        filename: `02_Seating_Arrangement_Hall_${s.hallName}.pdf`,
+        filename: `02b_Seating_Arrangement_Hall_${s.hallName}_${dateClean}_${selectedExamSlot}.pdf`,
         html: s.html,
       });
     });
@@ -85,7 +125,7 @@ export const DocumentsView: React.FC = () => {
     // 3. Attendance Sheets
     allDocs.attendanceSheets.forEach((a) => {
       docList.push({
-        filename: `03_Attendance_Sheet_${a.hallName}_${a.groupName}.pdf`,
+        filename: `03_Attendance_Sheet_${a.hallName}_${a.groupName}_${dateClean}_${selectedExamSlot}.pdf`,
         html: a.html,
       });
     });
@@ -138,6 +178,62 @@ export const DocumentsView: React.FC = () => {
           <span>{exportMessage}</span>
         </div>
       )}
+
+      {/* Date & Slot Selector for Document Generation */}
+      <div className="bg-white border border-gov-border rounded p-3.5 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+        <div className="flex items-center space-x-4">
+          <div className="flex items-center space-x-2">
+            <Calendar className="w-4 h-4 text-slate-400 shrink-0" />
+            <span className="font-bold text-slate-700 uppercase text-[10px]">Date:</span>
+            <select
+              value={selectedExamDate}
+              onChange={(e) => setSelectedExamDate(e.target.value)}
+              className="bg-slate-50 border border-slate-300 rounded px-2.5 py-1 font-mono font-bold text-navy-950"
+            >
+              {availableDates.map((d) => (
+                <option key={d} value={d}>
+                  {d}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex items-center space-x-2">
+            <Clock className="w-4 h-4 text-slate-400 shrink-0" />
+            <span className="font-bold text-slate-700 uppercase text-[10px]">Slot:</span>
+            <div className="flex rounded border border-slate-300 p-0.5 bg-slate-100">
+              <button
+                onClick={() => setSelectedExamSlot('FN')}
+                className={`px-3 py-1 text-center font-bold text-xs rounded transition-all ${
+                  selectedExamSlot === 'FN'
+                    ? 'bg-white text-navy-950 shadow-xs'
+                    : 'text-slate-600 hover:text-navy-900'
+                }`}
+              >
+                FN (10:15 - 12:15)
+              </button>
+              <button
+                onClick={() => setSelectedExamSlot('AN')}
+                className={`px-3 py-1 text-center font-bold text-xs rounded transition-all ${
+                  selectedExamSlot === 'AN'
+                    ? 'bg-white text-navy-950 shadow-xs'
+                    : 'text-slate-600 hover:text-navy-900'
+                }`}
+              >
+                AN (01:30 - 03:30)
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="text-[11px] text-slate-500 font-medium">
+          Active Plan:{' '}
+          <strong className="text-navy-950">
+            {allDocs.seatingSheets.length} Halls Seated
+          </strong>{' '}
+          for {selectedExamDate} ({selectedExamSlot})
+        </div>
+      </div>
 
       {/* Grid of Documents */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
@@ -252,25 +348,50 @@ export const DocumentsView: React.FC = () => {
           </div>
         </div>
 
-        {/* Document 4: Invigilator Seating Sheets (Per Hall) */}
+        {/* Document 4: Seating Arrangement Sheets (Official 2 Halls / Page Format) */}
         <div className="bg-white border border-gov-border rounded p-5 flex flex-col justify-between space-y-4 shadow-xs">
           <div>
             <div className="flex items-center space-x-2 text-navy-900 font-bold text-xs uppercase tracking-wider mb-1">
               <Building2 className="w-4 h-4 text-accent" />
-              <span>4. Invigilator Seating Sheets ({allDocs.seatingSheets.length} Halls)</span>
+              <span>4. Seating Arrangement Sheets (2 Halls / A4 Page)</span>
             </div>
             <p className="text-xs text-slate-600 leading-relaxed">
-              Seat-by-seat bench layout carried by invigilators to each hall showing exactly who sits at each bench position.
+              Official institutional format: A4 portrait with two halls per page, separate Stream 1 & 2 bench tables, and sequential seat codes.
             </p>
           </div>
 
-          <div className="pt-3 border-t border-slate-100 space-y-2">
-            <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
+          <div className="pt-3 border-t border-slate-100 space-y-2.5">
+            <div className="flex items-center justify-end space-x-2">
+              <button
+                onClick={() => handlePreview('Seating Arrangement (2 Halls / Page)', allDocs.consolidatedSeatingSheet)}
+                className="flex items-center space-x-1 px-3 py-1.5 border border-slate-300 rounded text-xs font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                <Eye className="w-3.5 h-3.5" />
+                <span>Preview (2 Halls / Page)</span>
+              </button>
+              <button
+                onClick={() => handlePrint(allDocs.consolidatedSeatingSheet)}
+                className="flex items-center space-x-1 px-3 py-1.5 bg-navy-900 hover:bg-navy-800 text-white rounded text-xs font-semibold"
+              >
+                <Printer className="w-3.5 h-3.5" />
+                <span>Print</span>
+              </button>
+              <button
+                onClick={() => handleSavePdf('Seating_Arrangement_Consolidated', allDocs.consolidatedSeatingSheet)}
+                className="flex items-center space-x-1 px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-white rounded text-xs font-semibold"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Save PDF</span>
+              </button>
+            </div>
+
+            <div className="text-[11px] font-semibold text-slate-500 pt-1">Individual Hall Sheets:</div>
+            <div className="flex flex-wrap gap-1.5 max-h-20 overflow-y-auto">
               {allDocs.seatingSheets.map((sheet) => (
                 <button
                   key={sheet.hallName}
                   onClick={() => handlePreview(`Seating Arrangement - Hall ${sheet.hallName}`, sheet.html)}
-                  className="px-2.5 py-1 rounded bg-slate-100 hover:bg-slate-200 text-xs font-semibold text-navy-900 border border-slate-200"
+                  className="px-2.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-[11px] font-semibold text-navy-900 border border-slate-200"
                 >
                   Hall {sheet.hallName}
                 </button>

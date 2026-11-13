@@ -91,6 +91,7 @@ export interface Staff {
   maxDutiesPerSession?: number;
   contactNumber?: string;
   email?: string;
+  programmes?: Programme[];   // e.g. ['B.Tech'], ['Diploma'], ['B.Tech', 'Diploma'], etc.
 }
 
 export interface ExamSession {

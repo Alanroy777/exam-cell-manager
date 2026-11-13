@@ -5,7 +5,7 @@ import { HardDrive, Save, Upload, Download, CheckCircle2, ShieldCheck, RefreshCw
 import logoImg from '../assets/logo.png';
 
 export const SettingsView: React.FC = () => {
-  const { settings, updateSettings } = useAppStore();
+  const { settings, updateSettings, resetToDefaultSampleData } = useAppStore();
 
   const [form, setForm] = useState(settings);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
@@ -14,6 +14,14 @@ export const SettingsView: React.FC = () => {
     updateSettings(form);
     setStatusMessage('Settings updated successfully!');
     setTimeout(() => setStatusMessage(null), 3000);
+  };
+
+  const handleResetSampleData = async () => {
+    if (confirm('Warning: This will reload the standard college demo sample data (students, timetable, halls). Any unsaved manual edits will be overwritten. Proceed?')) {
+      await resetToDefaultSampleData();
+      setStatusMessage('Reset to institutional sample demo data successfully!');
+      setTimeout(() => setStatusMessage(null), 3500);
+    }
   };
 
   const handleBackup = async () => {
@@ -142,6 +150,14 @@ export const SettingsView: React.FC = () => {
           >
             <Upload className="w-4 h-4" />
             <span>Restore Database from File</span>
+          </button>
+
+          <button
+            onClick={handleResetSampleData}
+            className="flex items-center space-x-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded text-xs font-semibold shadow-xs transition-colors border border-slate-300"
+          >
+            <RefreshCw className="w-4 h-4 text-slate-500" />
+            <span>Reset to Sample Demo Data</span>
           </button>
         </div>
       </div>

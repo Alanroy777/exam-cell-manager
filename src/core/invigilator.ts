@@ -2,6 +2,7 @@ import {
   HallSeatingPlan,
   InvigilatorConflict,
   InvigilatorDutyAssignment,
+  Programme,
   Staff,
 } from './types';
 
@@ -9,9 +10,51 @@ export interface AutoAssignInvigilatorsOptions {
   sessionId: string;
   dates: string[];
   slots: ('FN' | 'AN')[];
-  hallPlans: HallSeatingPlan[]; // Hall plans for this exam session
+  hallPlans: HallSeatingPlan[]; // Default hall plans
   staffList: Staff[];
   existingAssignments?: InvigilatorDutyAssignment[];
+  slotHallPlans?: Record<string, HallSeatingPlan[]>; // Optional per-slot plans: `${date}_${slot}` -> HallSeatingPlan[]
+}
+
+/**
+ * Infers the programmes writing exams in a hall from groupsPresent.
+ */
+export function getHallProgrammes(groupsPresent: string[]): Programme[] {
+  const progs = new Set<Programme>();
+  for (const grp of groupsPresent) {
+    const norm = grp.toUpperCase();
+    if (norm.includes('MCA')) {
+      progs.add('MCA');
+    } else if (norm.includes('BCA')) {
+      progs.add('BCA');
+    } else if (
+      norm.includes('DIPLOMA') ||
+      norm.includes('POLY') ||
+      norm.includes(' EEE') ||
+      norm.includes(' AU') ||
+      norm.includes(' CT')
+    ) {
+      progs.add('Diploma');
+    } else {
+      progs.add('B.Tech');
+    }
+  }
+  return Array.from(progs);
+}
+
+/**
+ * Returns the teaching programmes for a staff member.
+ * Falls back to their department if programmes is not explicitly configured.
+ */
+export function getStaffProgrammes(staff: Staff): Programme[] {
+  if (staff.programmes && staff.programmes.length > 0) {
+    return staff.programmes;
+  }
+  const dept = (staff.department || '').toUpperCase();
+  if (dept.includes('DIPLOMA')) return ['Diploma'];
+  if (dept.includes('MCA')) return ['MCA'];
+  if (dept.includes('BCA')) return ['BCA'];
+  return ['B.Tech'];
 }
 
 /**
@@ -50,7 +93,6 @@ export function validateInvigilatorAssignment(
   // A staff member who is class tutor of any group seated in this hall CANNOT invigilate there
   if (staff.tutorOfGroup && hallPlan) {
     const isTutorOfPresentGroup = hallPlan.groupsPresent.some((grp) => {
-      // Direct group match (e.g. "S3 CS A") or normalized comparison
       const normalizedTutor = staff.tutorOfGroup!.replace(/\s+/g, '').toUpperCase();
       const normalizedGrp = grp.replace(/\s+/g, '').toUpperCase();
       return (
@@ -78,6 +120,11 @@ export function validateInvigilatorAssignment(
 
 /**
  * Automatically assigns invigilators fairly across all halls and dates.
+ * Enforces:
+ * 1. Tutor exclusion (class tutors never invigilate their own students)
+ * 2. No double booking in the same slot
+ * 3. Programme matching (Diploma teachers go to Diploma exams, B.Tech to B.Tech, MCA/BCA to MCA/BCA, cross-teachers to either)
+ * 4. Fair load balancing across all faculty
  */
 export function autoAssignInvigilators(
   options: AutoAssignInvigilatorsOptions
@@ -86,14 +133,22 @@ export function autoAssignInvigilators(
   conflicts: InvigilatorConflict[];
   unassignedSlots: { date: string; slot: 'FN' | 'AN'; hallName: string }[];
 } {
-  const { sessionId, dates, slots, hallPlans, staffList, existingAssignments = [] } = options;
+  const {
+    sessionId,
+    dates,
+    slots,
+    hallPlans,
+    staffList,
+    existingAssignments = [],
+    slotHallPlans = {},
+  } = options;
 
   const assignments: InvigilatorDutyAssignment[] = [...existingAssignments];
   const allConflicts: InvigilatorConflict[] = [];
   const unassignedSlots: { date: string; slot: 'FN' | 'AN'; hallName: string }[] = [];
 
   const staffMap = new Map<string, Staff>(staffList.map((s) => [s.id, s]));
-  const hallPlanMap = new Map<string, HallSeatingPlan>(hallPlans.map((h) => [h.hallId, h]));
+  const defaultHallPlanMap = new Map<string, HallSeatingPlan>(hallPlans.map((h) => [h.hallId, h]));
 
   // Track duties per staff for fair distribution
   const dutyCounts = new Map<string, number>();
@@ -104,11 +159,14 @@ export function autoAssignInvigilators(
     dutyCounts.set(a.staffId, (dutyCounts.get(a.staffId) || 0) + 1);
   }
 
-  // Active halls that have students
-  const activeHalls = hallPlans.filter((h) => h.totalStudents > 0);
-
   for (const date of dates) {
     for (const slot of slots) {
+      const slotKey = `${date}_${slot}`;
+      const activeHallsForSlot =
+        slotHallPlans[slotKey] && slotHallPlans[slotKey].length > 0
+          ? slotHallPlans[slotKey].filter((h) => h.totalStudents > 0)
+          : hallPlans.filter((h) => h.totalStudents > 0);
+
       // Find staff already assigned in this slot
       const assignedInSlot = new Set(
         assignments
@@ -116,19 +174,21 @@ export function autoAssignInvigilators(
           .map((a) => a.staffId)
       );
 
-      for (const hall of activeHalls) {
+      for (const hall of activeHallsForSlot) {
         // Check if already assigned
         const existing = assignments.find(
           (a) => a.date === date && a.sessionSlot === slot && a.hallId === hall.hallId
         );
         if (existing) continue;
 
+        const hallProgs = getHallProgrammes(hall.groupsPresent);
+
         // Find candidate staff
         const candidates = staffList.filter((s) => {
           if (assignedInSlot.has(s.id)) return false;
 
           // Check max duties
-          const maxDuties = s.maxDutiesPerSession || 5;
+          const maxDuties = s.maxDutiesPerSession || 6;
           if ((dutyCounts.get(s.id) || 0) >= maxDuties) return false;
 
           // Check tutor conflict with hall
@@ -136,7 +196,11 @@ export function autoAssignInvigilators(
             const hasTutorConflict = hall.groupsPresent.some((grp) => {
               const normalizedTutor = s.tutorOfGroup!.replace(/\s+/g, '').toUpperCase();
               const normalizedGrp = grp.replace(/\s+/g, '').toUpperCase();
-              return normalizedTutor === normalizedGrp;
+              return (
+                normalizedTutor === normalizedGrp ||
+                normalizedGrp.includes(normalizedTutor) ||
+                normalizedTutor.includes(normalizedGrp)
+              );
             });
             if (hasTutorConflict) return false;
           }
@@ -144,11 +208,23 @@ export function autoAssignInvigilators(
           return true;
         });
 
-        // Sort candidates by:
-        // 1. Current duty count ascending (fair distribution)
-        // 2. Non-exam cell members first (exam cell oversees operations)
-        // 3. Lecturer / Assistant Professor first before HOD
+        // Sort candidates:
+        // 1. Programme match (Diploma faculty for Diploma halls, B.Tech for B.Tech, MCA/BCA for MCA/BCA, cross teachers match either)
+        // 2. Current duty count ascending (fair load balancing)
+        // 3. Non-exam cell members first (exam cell coordinates)
+        // 4. Lecturer / Assistant Professor first before HOD
+        // 5. Alphabetical by name
         candidates.sort((a, b) => {
+          const progsA = getStaffProgrammes(a);
+          const progsB = getStaffProgrammes(b);
+
+          const matchA = hallProgs.length === 0 || hallProgs.some((p) => progsA.includes(p));
+          const matchB = hallProgs.length === 0 || hallProgs.some((p) => progsB.includes(p));
+
+          if (matchA !== matchB) {
+            return matchA ? -1 : 1;
+          }
+
           const countA = dutyCounts.get(a.id) || 0;
           const countB = dutyCounts.get(b.id) || 0;
           if (countA !== countB) return countA - countB;
@@ -195,7 +271,7 @@ export function autoAssignInvigilators(
   // Validate all assignments
   for (const a of assignments) {
     const staff = staffMap.get(a.staffId);
-    const hallPlan = hallPlanMap.get(a.hallId);
+    const hallPlan = defaultHallPlanMap.get(a.hallId);
     if (staff) {
       const conflicts = validateInvigilatorAssignment(a, hallPlan, staff, assignments);
       allConflicts.push(...conflicts);
@@ -208,4 +284,3 @@ export function autoAssignInvigilators(
     unassignedSlots,
   };
 }
-
